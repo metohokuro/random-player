@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ランダム音楽プレイヤー</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif;margin:24px;background:#f7f7fb;color:#111}
+    .card{background:#fff;border-radius:12px;padding:18px;box-shadow:0 6px 18px rgba(18,30,50,0.06);max-width:820px;margin:auto}
+    button{padding:8px 12px;border-radius:8px;border:0;background:#2563eb;color:#fff;cursor:pointer}
+    button.secondary{background:#6b7280}
+    input[type=file]{display:block;margin-bottom:12px}
+    ul{padding-left:18px}
+    li{margin:6px 0}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .small{font-size:0.9rem;color:#555}
+    .track{font-weight:600}
+    label{display:inline-flex;gap:8px;align-items:center}
+    #dropzone{margin:12px 0;padding:24px;border:2px dashed #2563eb;border-radius:12px;text-align:center;color:#2563eb;background:#f0f6ff;cursor:pointer}
+    #dropzone.dragover{background:#dbeafe}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>ランダム音楽プレイヤー</h1>
+    <p class="small">複数の音楽ファイルを選択して、ランダムで再生します。ブラウザ内で動作します（ファイルはサーバに送信されません）。</p>
+
+    <input id="fileInput" type="file" accept="audio/*" multiple />
+    <div id="dropzone">ここに音楽ファイルをドラッグ＆ドロップ</div>
+
+    <div class="controls">
+      <button id="playRandom">ランダム再生</button>
+      <button id="nextRandom" class="secondary">次をランダムで再生</button>
+      <button id="stop" class="secondary">停止</button>
+      <label><input id="continuous" type="checkbox" /> 連続ランダム再生</label>
+      <label class="small">音量 <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8" /></label>
+    </div>
+
+    <p class="small">選択済みトラック: <span id="count">0</span></p>
+    <ul id="playlist"></ul>
+
+    <p class="small">現在の曲: <span id="current" class="track">—</span></p>
+
+    <!-- hidden audio element used for playback -->
+    <audio id="audio" controls style="width:100%;margin-top:12px"></audio>
+  </div>
+
+  <script>
+    // 要素取得
+    const fileInput = document.getElementById('fileInput');
+    const dropzone = document.getElementById('dropzone');
+    const playRandomBtn = document.getElementById('playRandom');
+    const nextRandomBtn = document.getElementById('nextRandom');
+    const stopBtn = document.getElementById('stop');
+    const continuousCheckbox = document.getElementById('continuous');
+    const volumeSlider = document.getElementById('volume');
+    const playlistEl = document.getElementById('playlist');
+    const countEl = document.getElementById('count');
+    const currentEl = document.getElementById('current');
+    const audio = document.getElementById('audio');
+
+    // 再生用データ構造
+    let tracks = []; // {name, url, file}
+
+    function resetPlaylist() {
+      tracks.forEach(t => { if (t.url) URL.revokeObjectURL(t.url); });
+      tracks = [];
+      playlistEl.innerHTML = '';
+      countEl.textContent = '0';
+      currentEl.textContent = '—';
+      audio.src = '';
+    }
+
+    function addFiles(files) {
+      const audioFiles = Array.from(files).filter(f => f.type.startsWith('audio'));
+      audioFiles.forEach((file, i) => {
+        const url = URL.createObjectURL(file);
+        const entry = { name: file.name, url, file };
+        tracks.push(entry);
+
+        const li = document.createElement('li');
+        li.textContent = file.name;
+        li.dataset.index = tracks.length - 1;
+        li.style.cursor = 'pointer';
+        li.title = 'クリックでその曲を再生';
+        li.addEventListener('click', () => playIndex(Number(li.dataset.index)));
+        playlistEl.appendChild(li);
+      });
+      countEl.textContent = String(tracks.length);
+    }
+
+    fileInput.addEventListener('change', (e) => {
+      resetPlaylist();
+      addFiles(e.target.files);
+    });
+
+    // ドラッグ&ドロップ
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('dragover');
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (!e.dataTransfer.files.length) return;
+      addFiles(e.dataTransfer.files);
+    });
+
+    function randomIndex(excludeIndex = -1) {
+      if (!tracks.length) return -1;
+      if (tracks.length === 1) return 0;
+      let idx;
+      do {
+        idx = Math.floor(Math.random() * tracks.length);
+      } while (idx === excludeIndex && tracks.length > 1);
+      return idx;
+    }
+
+    function playIndex(idx) {
+      if (idx < 0 || idx >= tracks.length) return;
+      const t = tracks[idx];
+      audio.src = t.url;
+      audio.play().catch(err => {
+        console.warn('再生に失敗しました:', err);
+      });
+      currentEl.textContent = t.name;
+      highlightPlaying(idx);
+    }
+
+    function highlightPlaying(idx) {
+      Array.from(playlistEl.children).forEach((li, i) => {
+        li.style.fontWeight = (i === idx) ? '700' : '400';
+        li.style.opacity = (i === idx) ? '1' : '0.8';
+      });
+    }
+
+    function playRandom() {
+      if (!tracks.length) return;
+      const currentUrl = audio.src;
+      const currentIdx = tracks.findIndex(t => t.url === currentUrl);
+      const idx = randomIndex(currentIdx);
+      playIndex(idx);
+    }
+
+    playRandomBtn.addEventListener('click', () => playRandom());
+    nextRandomBtn.addEventListener('click', () => playRandom());
+    stopBtn.addEventListener('click', () => { audio.pause(); audio.currentTime = 0; });
+
+    audio.addEventListener('ended', () => {
+      if (continuousCheckbox.checked && tracks.length) {
+        const currentUrl = audio.src;
+        const currentIdx = tracks.findIndex(t => t.url === currentUrl);
+        const idx = randomIndex(currentIdx);
+        playIndex(idx);
+      }
+    });
+
+    volumeSlider.addEventListener('input', (e) => {
+      audio.volume = Number(e.target.value);
+    });
+    audio.volume = Number(volumeSlider.value);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (audio.paused) audio.play(); else audio.pause();
+      }
+      if (e.key.toLowerCase() === 'n') playRandom();
+    });
+
+    window.addEventListener('unload', () => {
+      tracks.forEach(t => { if (t.url) URL.revokeObjectURL(t.url); });
+    });
+  </script>
+</body>
+</html>
